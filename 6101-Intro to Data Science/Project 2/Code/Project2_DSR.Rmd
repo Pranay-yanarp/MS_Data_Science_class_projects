@@ -1,0 +1,470 @@
+---
+title: "Kepler Exoplanet Classification"
+author: "Data Science Rookies"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    code_folding: hide
+   # number_sections: True
+    toc: yes
+    toc_depth: 4
+    toc_float: yes
+  pdf_document:
+    toc: yes
+    toc_depth: '4'
+---
+  
+```{r basic, include=F}
+# use this function to conveniently load libraries and work smoothly with knitting
+# can add quietly=T option to the require() function
+loadPkg = function(x) { if (!require(x,character.only=T, quietly =T)) { install.packages(x,dep=T,repos="http://cran.us.r-project.org"); if(!require(x,character.only=T)) stop("Package not found") } }
+
+# unload/detact package when done using it
+unloadPkg = function(pkg, character.only = FALSE) { 
+  if(!character.only) { pkg <- as.character(substitute(pkg)) } 
+  search_item <- paste("package", pkg,sep = ":") 
+  while(search_item %in% search()) { detach(search_item, unload = TRUE, character.only = TRUE) } 
+}
+```
+
+```{r setup, include=FALSE}
+# some of common options (and the defaults) are: 
+# include=T, eval=T, echo=T, results='hide'/'asis'/'markup',..., collapse=F, warning=T, message=T, error=T, cache=T, fig.width=6, fig.height=4, fig.dim=c(6,4) #inches, fig.align='left'/'center','right', 
+# knitr::opts_chunk$set(warning = F, results = "markup", message = F)
+knitr::opts_chunk$set(warning = F, results = "hide", message = F)
+# knitr::opts_chunk$set(include = F)
+# knitr::opts_chunk$set(echo = TRUE)
+options(scientific=T, digits = 3) 
+# options(scipen=9, digits = 3) 
+# ‘scipen’: integer. A penalty to be applied when deciding to print numeric values in fixed or exponential notation.  Positive values bias towards fixed and negative towards scientific notation: fixed notation will be preferred unless it is more than ‘scipen’ digits wider.
+# use scipen=999 to prevent scientific notation at all times
+```
+
+```{r xkablesummary}
+loadPkg("xtable")
+loadPkg("kableExtra")
+loadPkg("stringi")
+
+xkabledply = function(modelsmmrytable, title="Table", digits = 4, pos="left", bso="striped") { 
+  #' Combining base::summary, xtable, and kableExtra, to easily display model summary. 
+  #' wrapper for the base::summary function on model objects
+  #' ELo 202004 GWU DATS
+  #' version 1.2
+  #' @param modelsmmrytable This can be a generic table, a model object such as lm(), or the summary of a model object summary(lm()) 
+  #' @param title Title of table. 
+  #' @param digits Number of digits to display
+  #' @param pos Position of table, c("left","center","right") 
+  #' @param bso bootstrap_options = c("basic", "striped", "bordered", "hover", "condensed", "responsive")
+  #' @return HTML table for display
+  #' @examples
+  #' library("xt height = "300px"able")
+  #' library("kableExtra")
+  #' xkabledply( df, title="Table testing", pos="left", bso="hover" )
+  modelsmmrytable %>%
+    xtable() %>% 
+    kable(caption = title, digits = digits) %>%
+    kable_styling(bootstrap_options = bso, full_width = FALSE, position = pos) %>%
+    kableExtra::scroll_box(width = "500px")
+}
+
+xkablesummary = function(df, title="Table: Statistics summary.", digits = 4, pos="left", bso="striped") { 
+  #' Combining base::summary, xtable, and kableExtra, to easily display numeric variable summary of dataframes. 
+  #' ELo 202004 GWU DATS
+  #' version 1.2
+  #' @param df The dataframe.
+  #' @param title Title of table. 
+  #' @param digits Number of digits to display
+  #' @param pos Position of table, c("left","center","right") 
+  #' @param bso bootstrap_options = c("basic", "striped", "bordered", "hover", "condensed", "responsive")
+  #' @return The HTML summary table for display, or for knitr to process into other formats 
+  #' @examples
+  #' xkablesummary( faraway::ozone )
+  #' xkablesummary( ISLR::Hitters, title="Five number summary", pos="left", bso="hover"  )
+  
+  s = summary(df) %>%
+    apply( 2, function(x) stringr::str_remove_all(x,c("Min.\\s*:\\s*","1st Qu.\\s*:\\s*","Median\\s*:\\s*","Mean\\s*:\\s*","3rd Qu.\\s*:\\s*","Max.\\s*:\\s*")) ) %>% # replace all leading words
+    apply( 2, function(x) stringr::str_trim(x, "right")) # trim trailing spaces left
+  
+  colnames(s) <- stringr::str_trim(colnames(s))
+  
+  if ( dim(s)[1] ==6 ) { rownames(s) <- c('Min','Q1','Median','Mean','Q3','Max') 
+  } else if ( dim(s)[1] ==7 ) { rownames(s) <- c('Min','Q1','Median','Mean','Q3','Max','NA') }
+  
+  xkabledply(s, title=title, digits = digits, pos=pos, bso=bso )
+}
+
+xkablevif = function(model, title="VIFs of the model", digits = 3, pos="left", bso="striped", wide=FALSE) { 
+  #' Combining faraway::vif, xtable, and kableExtra, to easily display numeric summary of VIFs for a model. 
+  #' ELo 202004 GWU DATS
+  #' version 1.2
+  #' @param model The lm or compatible model object.
+  #' @param title Title of table. 
+  #' @param digits Number of digits to display
+  #' @param pos Position of table, c("left","center","right") 
+  #' @param bso bootstrap_options = c("basic", "striped", "bordered", "hover", "condensed", "responsive")
+  #' @param wide print table in long (FALSE) format or wide (TRUE) format
+  #' @return The HTML summary table of the VIFs for a model for display, or for knitr to process into other formats 
+  #' @examples
+  #' xkablevif( lm(Salary~Hits+RBI, data=ISLR::Hitters, wide=T ) )
+  
+  vifs = table( names(model$coefficients)[2:length(model$coefficients)] ) # remove intercept to set column names
+  vifs[] = faraway::vif(model) # set the values
+  if (wide) { vifs <- t(vifs) }
+  xkabledply( vifs, title=title, digits = digits, pos=pos, bso=bso )
+}
+
+```
+
+# 1 Introduction  
+
+Have you ever wondered what life on other planets might be like? If so, you are not alone. Humans have been looking to the sky and beyond for centuries wondering what might be found in the vast landscape of the universe. As technology advances, we continue developing tools that allow us to better identify objects of interest beyond the scope of our galaxy, one of those tools being the Kepler Space Telescope (KST). The KST is a space telescope that was launched into Earth’s orbit on March 7, 2009 to monitor more than 150,000 stars in search for transiting exoplanets. All objects the KST shows interest in are labeled as Kepler Objects of Interest (KOI), and the KOI feature data is logged and stored by NASA. This data is available to the public and is what we will be analyzing.This paper aims to explore the idea of using classification techniques, specifically logistic regression, k-nearest neighbor, and random forests to accurately distinguish between exoplanet and non-exoplanet KOIs.
+
+**The SMART questions we will be focusing on are:**  
+1. For the 9,564 KOIs in the database, can we use classification methods to accurately classify KOIs as exoplanets based on the given feature data?  
+2. Which will be more accurate for classifying KOIs, a logistic regression or k-nearest neighbor model?
+
+Included in our discussion is some exploratory data analysis (EDA) and preprocessing of the dataset to prepare it train our models.
+
+## 1.2 Dataset Overview
+
+Our dataset,created by NASA and the Kepler Space Program, consisted of 9,565 observations - each observation is a distinct Kepler Object of Interest (KOI). Initially, there were 50 Features describing the KOIs with a combination of numerical and categorical data. We reduced the number of features from 50 to 23 after dropping unnecessary features that were of no use to our project or contained a large number of null values. The target variable we chose was koi_disposition. This target classifies indicates whether a kepler object of interest is an exoplanet (denoted by "confirmed"), a possible exoplanet (denoted by "confirmed"), or not an exoplanet (denoted by "false positive").
+
+
+# 2 EDA & Preprocessing  
+
+
+```{r, read files}
+koi_df_orig <- data.frame(read.csv('Kepler_Exoplanet.csv'))
+length(koi_df_orig)
+```
+
+
+```{r, remove unwanted columns}
+koi_df<-data.frame(subset(koi_df_orig,select = -c(rowid,kepid,kepoi_name,kepler_name, koi_teq_err1,koi_teq_err2,koi_tce_delivname)))
+koi_df1<-data.frame(subset(koi_df,select =   -c(koi_period_err1,koi_period_err2,koi_time0bk_err1,koi_time0bk_err2,koi_impact_err1,koi_impact_err2,koi_duration_err1,koi_duration_err2,koi_depth_err1,koi_depth_err2,koi_prad_err1,koi_prad_err2,koi_insol_err1,koi_insol_err2,koi_steff_err1,koi_steff_err2,koi_slogg_err1,koi_slogg_err2,koi_srad_err1,koi_srad_err2)))
+
+length(koi_df1)
+```
+
+
+```{R}
+str(koi_df1)
+```
+Below is a summary of the numeric columns.  
+
+```{R, remove missing values, results="markup"}
+koi_df1 = na.exclude(koi_df1)
+xkablesummary(koi_df1[c(3, 8:23)], title = "Summary of the numeric")
+#xkablesummary
+```
+
+
+## 2.1 Count Plots  
+
+### 2.1.1 Count Plot of Target Feature - koi_disposition  
+```{R, results = 'markup'}
+loadPkg("ggplot2")
+count_koi_disposition = ggplot(data =  koi_df1, aes(x = koi_disposition)) +
+  geom_bar(fill = c("grey"), col = c("blue", "red", "green")) +
+   geom_text(stat = "count", aes(label = ..count..)) + 
+    labs(title = "Count plot of koi_disposition")
+count_koi_disposition   
+
+count_koi_pdisposition = ggplot(data =  koi_df1, aes(x = koi_pdisposition)) +
+  geom_bar(fill = c("grey"), col = c("blue", "red")) +
+   geom_text(stat = "count", aes(label = ..count..)) + 
+    labs(title = "Count plot of koi_pdisposition")
+count_koi_pdisposition
+```  
+
+To test the normality of our target variable, we use a count plot. We found that there are roughly double the amount of observations classified as false positives than candidate or confirmed. With an unbalanced dataset like this, we run the risk of our models being better at classifying false positives than confirmed or candidate, which could result in our models performing poorly.  
+
+```{R, change the data type}
+# Adjusted Dataset
+koi_df1$koi_disposition <- ifelse(koi_df1$koi_disposition == "FALSE POSITIVE", 0,
+                     ifelse(koi_df1$koi_disposition == "CONFIRMED", 1, 2))
+
+koi_df1$koi_pdisposition[koi_df1$koi_pdisposition == "FALSE POSITIVE"] <- 0
+koi_df1$koi_pdisposition[koi_df1$koi_pdisposition == "CANDIDATE"] <- 1
+
+koi_df1$koi_disposition = as.factor(koi_df1$koi_disposition)
+koi_df1$koi_pdisposition = as.factor(koi_df1$koi_pdisposition)
+
+str(koi_df1)
+
+# Original Dataset
+koi_df = na.exclude(koi_df)
+koi_df$koi_disposition <- ifelse(koi_df$koi_disposition == "FALSE POSITIVE", 0,
+                     ifelse(koi_df$koi_disposition == "CONFIRMED", 1, 2))
+
+koi_df$koi_pdisposition[koi_df$koi_pdisposition == "FALSE POSITIVE"] <- 0
+koi_df$koi_pdisposition[koi_df$koi_pdisposition == "CANDIDATE"] <- 1
+
+koi_df$koi_disposition = as.factor(koi_df$koi_disposition)
+koi_df$koi_pdisposition = as.factor(koi_df$koi_pdisposition)
+
+```  
+
+For the target variable, we use "0", "1" and "2" instead of the "FALSE POSITIVE", "CONFIRMED" and "CANDIDATE" to make it more convenient.  
+
+## 2.2 Normality Test  
+
+### 2.2.1 QQ Test for koi_period  
+```{R, normality test1}
+shapiro.test(koi_df1$koi_period[0:5000])
+qqnorm(koi_df1$koi_period, pch = 1, frame = FALSE, main = "QQ-plot of koi period")
+qqline(koi_df1$koi_period, col = "blue", lwd = 2)
+
+```  
+
+From the above plot we can observe that koi_period does not have normal distribution.  
+
+### 2.2.2 QQ Test for koi_steff  
+```{R, normality test2}
+shapiro.test(koi_df1$koi_period[0:5000])
+qqnorm(koi_df1$koi_steff, pch = 1, frame = FALSE, main = "QQ-plot of koi steff")
+qqline(koi_df1$koi_steff, col = "blue", lwd = 2)
+
+```  
+
+From the above plot we can observe that koi_steff does not have normal distribution.  
+
+
+### 2.2.3 QQ Test for koi_slogg  
+```{R, normality test3}
+shapiro.test(koi_df1$koi_period[0:5000])
+qqnorm(koi_df1$koi_slogg, pch = 1, frame = FALSE, main = "QQ-plot of koi slogg")
+qqline(koi_df1$koi_slogg, col = "blue", lwd = 2)
+
+```  
+
+From the above plot we can observe that koi_slogg does not have normal distribution.  
+
+### 2.2.4 QQ Test for koi_kepmag  
+```{R, normality test4}
+shapiro.test(koi_df1$koi_period[0:5000])
+qqnorm(koi_df1$koi_kepmag, pch = 1, frame = FALSE, main = "QQ-plot of koi kepmag")
+qqline(koi_df1$koi_kepmag, col = "blue", lwd = 2)
+
+```  
+
+From the above plot we can observe that koi_kepmag is near to normal distribution but not completely.  
+
+# 3 Preprocessing  
+
+## 3.1 Feature Selection  
+
+```{r feature selection}
+loadPkg('leaps')
+dim(koi_df1)
+reg.best10 <- regsubsets(koi_disposition~. , data = koi_df1, nvmax = 10, nbest = 2, method = 'exhaustive')
+plot(reg.best10, scale = 'adjr2', main = 'Adjusted R^2')  
+plot(reg.best10, scale = 'bic', main = 'BIC')  
+plot(reg.best10, scale = 'Cp', main = 'CP')  
+summary(reg.best10)
+
+```
+
+The regsubsets method with the `adjusted R2`, 'BIC`, and `Cp` criteria all return with the same result showing that the best model has the following 10 features: koi_pdisposition1,koi_score, koi_period, koi_model_snr, koi_tce_plnt_num, koi_steff, koi_slogg, ra, dec, and koi_kepmag, with a best **Adjusted R-squared of 0.81**.  
+
+
+```{r feature selection - plot, fig.width=10,fig.height=8}
+loadPkg('car')
+
+subsets(reg.best10, statistic = 'adjr2', legend = FALSE, min.size = 5, main = 'Adjusted R^2')
+subsets(reg.best10, statistic = 'cp', legend = FALSE, min.size = 5, main = 'Mallow Cp')
+abline(a=5,b=5,lty=3)
+
+```
+
+
+The `subsets` function can plot and show better which features have how much influence on the target variable and by how much.  
+
+## 3.2 Train-Test split  
+
+```{r Train-Test Split }
+set.seed(1000)
+koi_sample <- sample(2, nrow(koi_df1), replace=TRUE, prob=c(0.75, 0.25))
+koi_train_dis <- koi_df1[koi_sample==1, -2]     # X and Y=koi_disposition
+koi_test_dis <- koi_df1[koi_sample==2, -2]      # X and Y=koi_disposition
+koi_train_pdis <- koi_df1[koi_sample==1, -1]    # X and Y=koi_pdisposition
+koi_test_pdis <- koi_df1[koi_sample==2, -1]     # X and Y=koi_pdisposition
+koi_trainX <- koi_df1[koi_sample==1, 3:23]      # Only X 
+koi_testX <- koi_df1[koi_sample==2, 3:23]       # Only X
+koi_trainLabels_dis <- koi_df1[koi_sample==1, 1]  # Only Y= koi_disposition
+koi_testLabels_dis <- koi_df1[koi_sample==2, 1]   # Only Y= koi_disposition
+koi_trainLabels_pdis <- koi_df1[koi_sample==1, 2] # Only Y= koi_pdisposition
+koi_testLabels_pdis <- koi_df1[koi_sample==2, 2]  # Only Y= koi_pdisposition
+
+set.seed(1000)
+koi_sample_orig <- sample(2, nrow(koi_df), replace=TRUE, prob=c(0.75, 0.25))
+koi_train_dis_orig <- koi_df[koi_sample==1, -2]     # X and Y=koi_disposition
+koi_test_dis_orig <- koi_df[koi_sample==2, -2]      # X and Y=koi_disposition
+koi_train_pdis_orig <- koi_df[koi_sample==1, -1]    # X and Y=koi_pdisposition
+koi_test_pdis_orig <- koi_df[koi_sample==2, -1]     # X and Y=koi_pdisposition
+koi_trainX_orig <- koi_df[koi_sample==1, 3:43]      # Only X 
+koi_testX_orig <- koi_df[koi_sample==2, 3:43]       # Only X
+koi_trainLabels_dis_orig <- koi_df[koi_sample==1, 1]  # Only Y= koi_disposition
+koi_testLabels_dis_orig <- koi_df[koi_sample==2, 1]   # Only Y= koi_disposition
+koi_trainLabels_pdis_orig <- koi_df[koi_sample==1, 2] # Only Y= koi_pdisposition
+koi_testLabels_pdis_orig <- koi_df[koi_sample==2, 2]  # Only Y= koi_pdisposition
+
+```
+
+Now we finished the train-test split for the origin data with all features and the simplified data with less features.  
+
+```{r}
+loadPkg("MASS")
+loadPkg("dplyr")
+loadPkg("caret")
+loadPkg("nnet")
+loadPkg("caret")
+loadPkg("pROC")
+loadPkg("rpart")
+loadPkg("randomForest")
+loadPkg("Boruta")
+loadPkg("mlbench")
+```
+
+# 4 Modeling  
+
+## 4.1 Random Forest 
+
+```{R,results='markup'}
+set.seed(1000)
+koi_train_dis_orig = na.exclude(koi_train_dis_orig)
+koi_test_dis_orig = na.exclude(koi_test_dis_orig)
+rf = randomForest(koi_disposition~., data = koi_train_dis_orig)
+rf
+p=predict(rf, koi_test_dis_orig)
+confusionMatrix(p, koi_test_dis_orig$koi_disposition)
+
+# the accuracy seems to be 0.896 on the original data set
+```
+
+From the results of random forest regression, we can observe that the accuracy of the model = 89.6 %.  
+From the confusion matrix, we can observe that 0's are predicted more correctly than the other two. There are more number of false positives and false negatives between the 'Confirmed' and 'Candidate' results in the confusion matrix.  
+The precision for 'false positive' = 98.03 %.  
+The precision for 'confirmed' = 83.54 %.  
+The precision for 'candidate' = 74.83 %.   
+We can also observe that the p-valve is less than 5%. Also, OOB estimate of error rate: 11.3%.  
+
+## 4.2 Multi-Logistic for "koi_disposition"  
+
+```{r Multi-Logistic of disposition}
+logmod_koi <- multinom(koi_disposition~.,data = koi_train_dis,model = T)
+logmod_sum <- summary(logmod_koi)
+logmod_pred <- predict(logmod_koi,koi_test_dis)
+mean(logmod_pred==koi_testLabels_dis)
+```
+
+```{r,results='markup'}
+# The prediction accuracy of the model is 0.833
+logmod_cm <- confusionMatrix(logmod_pred,koi_testLabels_dis)
+logmod_cm
+# confusion matrix
+```
+Now we try to use the multinomial logistic regression to build the model. We have learnt the logistic regression for the 2-class problems like the survivals of the Titanic dataset. But in this project, our target feature has 3 classes:0,1,2. So the formula is a little bit different.  
+
+For the 2-class regressions, the response is log(P/(1-p))  
+For the 3-class regession, firstly we choose a response class as a reference or "base" like class "0" in this project.  
+Then we use log(P1/P0), log(P2/P0) as responses and do the regressions respectively. The other things are almost the same.  
+
+The result of the confusion matrix shows that the accuracy of the model is 0.833.  
+
+## 4.3 K-NN for "koi_disposition"  
+
+```{r KNN of disposition,results='markup'}
+loadPkg("FNN")
+
+chooseK = function(k, train_set, val_set, train_class, val_class){
+  
+  # Build knn with k neighbors considered.
+  set.seed(1) # seems no meaning
+  class_knn = knn(train = train_set,    #<- training set cases
+                  test = val_set,       #<- test set cases
+                  cl = train_class,     #<- category for classification
+                  k = k) #,                #<- number of neighbors considered
+                  # use.all = TRUE)       #<- control ties between class assignments
+                                        #   If true, all distances equal to the kth 
+                                        #   largest are included
+  
+  tab = table(class_knn, val_class)
+  
+  # Calculate the accuracy.
+  accu = sum(tab[row(tab) == col(tab)]) / sum(tab)                         
+  cbind(k = k, accuracy = accu)
+}
+
+knn_different_k <- sapply(seq(1, 21, by = 2),
+                          function(x) chooseK(x, 
+                                             train_set = koi_trainX,
+                                             val_set = koi_testX,
+                                             train_class = koi_trainLabels_dis,
+                                             val_class = koi_testLabels_dis))
+
+knn_different_k = data.frame(k = knn_different_k[1,],
+                             accuracy = knn_different_k[2,])
+knn_different_k
+# K= 17 has the best accuracy 0.638, still worse than multi-logistic 
+
+knn_pred <- knn(train = koi_trainX,test=koi_testX,cl = koi_trainLabels_dis,k = 17)
+knn_cm <- confusionMatrix(knn_pred,koi_testLabels_dis)
+knn_cm     # confusion matrix for 17-NN
+
+```  
+According to the result of the K-NN method, when k = 17, the accuracy 0.638 is the best, which is not so satisfactory.  
+The chooseK() function is from the rmd file of the professor.  
+
+## 4.4 ROC-AUC Plot
+
+### 4.4.1 ROC-AUC Plot of Multi-Logistic   
+
+```{R}
+loadPkg("pROC")
+pred<- predict(logmod_koi, koi_test_dis, type='probs')
+a <- roc(koi_disposition~pred[,1], data=koi_test_dis)
+auc(a) 
+plot(a)
+
+```
+
+Area under the curve is = 0.995 which is highly acceptable since it is greater than 0.8.  
+
+### 4.4.1 ROC-AUC Plot of KNN  
+
+
+```{R}
+
+prob=knn(train = koi_trainX,test=koi_testX,cl = koi_trainLabels_dis,k = 17, prob=T)
+prob=attr(prob, "prob")
+b <- roc(koi_testLabels_dis, prob)
+auc(b) 
+plot(b)
+
+```
+
+Area under the curve is = 0.745 which is not acceptable since it is less than 0.8. The multi-logistic model has better area under the curve than KNN model.  
+
+# 5 Conclusion  
+
+## 5.1 Results  
+
+We found that the random forest performed the best out of our three models. We believe this is due to its ability to add additional randomness to the model through the high number of estimators and can find the best features in the dataset. The Logistic Regression model was the fastest model to train and also had a relatively high accuracy score. The reason we believe it did not perform as well as the random forest model is because logistic regression models can often be highly influenced by multicollinearty and memorize the the training data, causing poor predictions on the test data. And lastly, our KNN model performed the worst to the high dimensionality of our dataset.  
+
+So, we conclude that using random forest model to predict the `koi_disposition` is better option than other models.  
+
+## 5.2 Caveats  
+
+The caveats we dealt with during this project were our high feature count and our numerical features mostly not having normal distributions. Because of the high feature count, we were not able to use stepwise feature selection, we could not read the output of the pairs-plot, and our KNN model ultimately performed poorly.  
+
+## 5.3 Citations
+
+Dataset - https://www.kaggle.com/nasa/kepler-exoplanet-search-results  
+
+* https://www.nasa.gov/mission_pages/kepler/overview/index.html  
+* https://www.kaggle.com/nasa/kepler-exoplanet-search-results  
+* https://www.nasa.gov/ames/kepler/nasas-kepler-discovers-first-earth-size-planet-in-the-habitable-zone-of-another-star  
+* https://www.nasa.gov/vision/universe/newworlds/Osiris_leaks.html  
+
+

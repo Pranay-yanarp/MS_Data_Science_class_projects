@@ -1,0 +1,608 @@
+---
+title: "Sunroof Project Analysis"
+
+# date: "March 27, 2021"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    code_folding: hide
+   # number_sections: True
+    toc: yes
+    toc_depth: 4
+    toc_float: yes
+  pdf_document:
+    toc: yes
+    toc_depth: '4'
+---
+  
+```{r basic, include=F}
+# use this function to conveniently load libraries and work smoothly with knitting
+# can add quietly=T option to the require() function
+loadPkg = function(x) { if (!require(x,character.only=T, quietly =T)) { install.packages(x,dep=T,repos="http://cran.us.r-project.org"); if(!require(x,character.only=T)) stop("Package not found") } }
+
+# unload/detact package when done using it
+unloadPkg = function(pkg, character.only = FALSE) { 
+  if(!character.only) { pkg <- as.character(substitute(pkg)) } 
+  search_item <- paste("package", pkg,sep = ":") 
+  while(search_item %in% search()) { detach(search_item, unload = TRUE, character.only = TRUE) } 
+}
+```
+
+```{r setup, include=FALSE}
+# some of common options (and the defaults) are: 
+# include=T, eval=T, echo=T, results='hide'/'asis'/'markup',..., collapse=F, warning=T, message=T, error=T, cache=T, fig.width=6, fig.height=4, fig.dim=c(6,4) #inches, fig.align='left'/'center','right', 
+# knitr::opts_chunk$set(warning = F, results = "markup", message = F)
+knitr::opts_chunk$set(warning = F, results = "hide", message = F)
+# knitr::opts_chunk$set(include = F)
+# knitr::opts_chunk$set(echo = TRUE)
+options(scientific=T, digits = 3) 
+# options(scipen=9, digits = 3) 
+# ‘scipen’: integer. A penalty to be applied when deciding to print numeric values in fixed or exponential notation.  Positive values bias towards fixed and negative towards scientific notation: fixed notation will be preferred unless it is more than ‘scipen’ digits wider.
+# use scipen=999 to prevent scientific notation at all times
+```
+
+```{r xkablesummary}
+loadPkg("xtable")
+loadPkg("kableExtra")
+loadPkg("stringi")
+
+xkabledply = function(modelsmmrytable, title="Table", digits = 4, pos="left", bso="striped") { 
+  #' Combining base::summary, xtable, and kableExtra, to easily display model summary. 
+  #' wrapper for the base::summary function on model objects
+  #' ELo 202004 GWU DATS
+  #' version 1.2
+  #' @param modelsmmrytable This can be a generic table, a model object such as lm(), or the summary of a model object summary(lm()) 
+  #' @param title Title of table. 
+  #' @param digits Number of digits to display
+  #' @param pos Position of table, c("left","center","right") 
+  #' @param bso bootstrap_options = c("basic", "striped", "bordered", "hover", "condensed", "responsive")
+  #' @return HTML table for display
+  #' @examples
+  #' library("xt height = "300px"able")
+  #' library("kableExtra")
+  #' xkabledply( df, title="Table testing", pos="left", bso="hover" )
+  modelsmmrytable %>%
+    xtable() %>% 
+    kable(caption = title, digits = digits) %>%
+    kable_styling(bootstrap_options = bso, full_width = FALSE, position = pos) %>%
+    kableExtra::scroll_box(width = "500px")
+}
+
+xkablesummary = function(df, title="Table: Statistics summary.", digits = 4, pos="left", bso="striped") { 
+  #' Combining base::summary, xtable, and kableExtra, to easily display numeric variable summary of dataframes. 
+  #' ELo 202004 GWU DATS
+  #' version 1.2
+  #' @param df The dataframe.
+  #' @param title Title of table. 
+  #' @param digits Number of digits to display
+  #' @param pos Position of table, c("left","center","right") 
+  #' @param bso bootstrap_options = c("basic", "striped", "bordered", "hover", "condensed", "responsive")
+  #' @return The HTML summary table for display, or for knitr to process into other formats 
+  #' @examples
+  #' xkablesummary( faraway::ozone )
+  #' xkablesummary( ISLR::Hitters, title="Five number summary", pos="left", bso="hover"  )
+  
+  s = summary(df) %>%
+    apply( 2, function(x) stringr::str_remove_all(x,c("Min.\\s*:\\s*","1st Qu.\\s*:\\s*","Median\\s*:\\s*","Mean\\s*:\\s*","3rd Qu.\\s*:\\s*","Max.\\s*:\\s*")) ) %>% # replace all leading words
+    apply( 2, function(x) stringr::str_trim(x, "right")) # trim trailing spaces left
+  
+  colnames(s) <- stringr::str_trim(colnames(s))
+  
+  if ( dim(s)[1] ==6 ) { rownames(s) <- c('Min','Q1','Median','Mean','Q3','Max') 
+  } else if ( dim(s)[1] ==7 ) { rownames(s) <- c('Min','Q1','Median','Mean','Q3','Max','NA') }
+  
+  xkabledply(s, title=title, digits = digits, pos=pos, bso=bso )
+}
+
+xkablevif = function(model, title="VIFs of the model", digits = 3, pos="left", bso="striped", wide=FALSE) { 
+  #' Combining faraway::vif, xtable, and kableExtra, to easily display numeric summary of VIFs for a model. 
+  #' ELo 202004 GWU DATS
+  #' version 1.2
+  #' @param model The lm or compatible model object.
+  #' @param title Title of table. 
+  #' @param digits Number of digits to display
+  #' @param pos Position of table, c("left","center","right") 
+  #' @param bso bootstrap_options = c("basic", "striped", "bordered", "hover", "condensed", "responsive")
+  #' @param wide print table in long (FALSE) format or wide (TRUE) format
+  #' @return The HTML summary table of the VIFs for a model for display, or for knitr to process into other formats 
+  #' @examples
+  #' xkablevif( lm(Salary~Hits+RBI, data=ISLR::Hitters, wide=T ) )
+  
+  vifs = table( names(model$coefficients)[2:length(model$coefficients)] ) # remove intercept to set column names
+  vifs[] = faraway::vif(model) # set the values
+  if (wide) { vifs <- t(vifs) }
+  xkabledply( vifs, title=title, digits = digits, pos=pos, bso=bso )
+}
+
+```
+
+# 1 Introduction  
+
+In the 21st century, climate change has become recognized as a severe global issue. "Climate change is a long-term change in the average weather patterns that have come to define Earth’s local, regional and global climates. These changes have a broad range of observed effects that are synonymous with the term." Human activities causing an increase in greenhouse gas emissions, fossil fuel burning in particular, are the driving cause of climate change and global warming. "The average increase in global temperature between 1880 and 1981 was ~0.07°C (0.13°F); however, the average rate of increase since1981 (0.18°C / 0.32°F) has more than doubled." One method for combatting climate change is to increase the supply and use of renewable energy, particularly solar energy, which allows for the replacing of carbon-intensive energy sources and an overall significant reduction in greenhouse gas emissions. This paper aims to focus on the availability of solar panel implementations and the potential carbon-offsets that coincide with increased solar energy use. 
+
+
+**The SMART questions we will be focusing on are:**  
+1. Analyze: Which variables have the greatest effect on the total solar energy generation potential?  
+2. Determine: Which variables significantly effect the estimated carbon dioxide abatement?  
+3. Compare: How does the estimated mean solar energy generation per panel type vary by region.  
+
+
+Included in our discussion is some exploratory data analysis (EDA) focusing on cleaning the data and preparing it for model-use as well as some linear models and ANOVA tests use to help answer our SMART questions. We used multiple models to show the advantages of including certain variables and excluding others.  
+
+
+
+# 2 EDA 
+
+Our EDA began by reading in the csv file, removing the unnecessary columns, renaming columns for readability purposes, removing observations with missing data, and changing data types as needed. We then explored the data using histograms, box plots, bar plots, scatter plots, and a correlation plot to prepare for model-building. Our exploration results along with explanations can be found below.  
+
+
+```{r q1}
+citydf <- data.frame(read.csv('city.csv'))
+
+citydf1<-subset(citydf,select = -c(number_of_panels_median, yearly_sunlight_kwh_median, install_size_kw_buckets_json))
+
+```
+
+```{r change names in citydf1}
+names(citydf1)[names(citydf1)=="yearly_sunlight_kwh_kw_threshold_avg"]<- "threshold_kw_avg"
+
+names(citydf1)[names(citydf1)=="number_of_panels_n"]<- "panels_north"
+names(citydf1)[names(citydf1)=="number_of_panels_s"]<- "panels_south"
+names(citydf1)[names(citydf1)=="number_of_panels_e"]<- "panels_east"
+names(citydf1)[names(citydf1)=="number_of_panels_w"]<- "panels_west"
+names(citydf1)[names(citydf1)=="number_of_panels_f"]<- "panels_flat"
+names(citydf1)[names(citydf1)=="number_of_panels_total"]<- "panels_total"
+
+names(citydf1)[names(citydf1)=="yearly_sunlight_kwh_n"]<- "sunlight_north"
+names(citydf1)[names(citydf1)=="yearly_sunlight_kwh_s"]<- "sunlight_south"
+names(citydf1)[names(citydf1)=="yearly_sunlight_kwh_e"]<- "sunlight_east"
+names(citydf1)[names(citydf1)=="yearly_sunlight_kwh_w"]<- "sunlight_west"
+names(citydf1)[names(citydf1)=="yearly_sunlight_kwh_f"]<- "sunlight_flat"
+names(citydf1)[names(citydf1)=="yearly_sunlight_kwh_total"]<- "sunlight_total"
+
+names(citydf1)[names(citydf1)=="carbon_offset_metric_tons"]<- "carbon_offset"
+names(citydf1)[names(citydf1)=="existing_installs_count"]<- "count_existing"
+
+```
+
+   
+```{r change datatype}
+citydf1$threshold_kw_avg<-as.numeric(citydf1$threshold_kw_avg)
+citydf1$panels_total<-as.numeric(citydf1$panels_total)
+citydf1$kw_median<-as.numeric(citydf1$kw_median)
+citydf1$kw_total<-as.numeric(citydf1$kw_total)
+citydf1$sunlight_total<-as.numeric(citydf1$sunlight_total)
+
+city_numcols <- unlist(lapply(citydf1, is.numeric))  # Identify the numeric and integer columns #
+
+city_num <- citydf1[, city_numcols]
+   
+city_num <- na.exclude(city_num)          # Exclude the na values without removing them #
+                                          # Or na.omit() to delete them #
+citydf1 <- na.exclude(citydf1)
+
+```
+
+## 2.1 Summary of data
+```{r EDA_basicstats, results=T}
+xkablesummary(city_num, title = "summary of citydf1") # change back to citydf1 if unwanted #
+
+#The table with a scroll bar added to it. Delete line 69 and the %>% above it if unwanted. #
+
+```
+
+This chart shows a summary of the variables in the city dataset.  
+
+
+## 2.2 Histograms  
+### 2.2.1 Total Number of Cities per Region. 
+``` {r}  
+
+northeast = c('Maine', 'New Hampshire', 'Vermont', 'Massachusetts', 'Rhode Island', 'Connecticut', 'New York', 'New Jersey', 'Pennsylvania')
+midwest = c('Ohio', 'Michigan', 'Indiana', 'Wisconsin', 'Illinois', 'Minnesota', 'Iowa', 'Missouri', 'North Dakota', 'South Dakota', 'Nebraska', 'Kansas')
+south = c('Delaware', 'Maryland', 'Virginia', 'West Virginia', 'Kentucky', 'North Carolina', 'South Carolina', 'Tennessee', 'Georgia', 'Florida', 'Alabama', 'Mississippi', 'Arkansas', 'Louisiana', 'Texas', 'Oklahoma')
+west = c('Montana', 'Idaho', 'Wyoming', 'Colorado', 'New Mexico', 'Arizona', 'Utah', 'Nevada', 'California', 'Oregon', 'Washington')
+
+loadPkg('dplyr')
+loadPkg('ggplot2')
+loadPkg('tidyr')
+
+citydf1  = citydf1 %>%
+  mutate(region = case_when(
+    state_name %in% south ~ 'south',
+    state_name %in% northeast ~ 'northeast',
+    state_name %in% midwest ~ 'midwest',
+    state_name %in% west ~ 'west',
+    TRUE ~ NA_character_
+)
+)
+citydf1 = citydf1 %>% drop_na(region)
+
+citydf1$region = factor(citydf1$region)
+
+city_count_per_region = 
+      ggplot(data = citydf1, aes(x = region, col = region, fill = region, alpha=0.7)) +                     geom_bar() + 
+            ggtitle('Number of Cities Per Region') # added color 
+
+city_count_per_region
+```
+
+From the bar chart above, it is obvious the south region has the most number of the cities, following by midwest, northeast and west. The number of the cities provides potential data points for the sample space. In other words, cities in the south region can have more potential solar panels installed. However, the potential number of solar panel installed is different from the actual number of solar panels installed. For the following analysis, we will be focuson the acutal solar panels installed in each region. 
+
+
+### 2.2.2 Mean Energy Per Panel in Different Directions.**  
+
+Find sunlight energy potential per panel per direction for each city.  
+i.e. sunlight_north / panels_north = estimated total solar energy generation potential per panel in city x  
+
+``` {r, solar energy generation per panel}
+citydf1=na.exclude(citydf1)
+citydf1$mean_energy_per_north_panel = citydf1$sunlight_north / citydf1$panels_north
+citydf1$mean_energy_per_south_panel = citydf1$sunlight_south / citydf1$panels_south
+citydf1$mean_energy_per_east_panel = citydf1$sunlight_east / citydf1$panels_east
+citydf1$mean_energy_per_west_panel = citydf1$sunlight_west / citydf1$panels_west
+citydf1$mean_energy_per_flat_panel = citydf1$sunlight_flat / citydf1$panels_flat
+citydf1$mean_energy_per_panel = citydf1$sunlight_total / citydf1$panels_total
+
+#north panel
+mean_energy_per_north_panel_plot = 
+      ggplot(data = citydf1, 
+                 aes(x = mean_energy_per_north_panel)) +
+        geom_histogram(col = "black", fill = "red", alpha = 0.7) +
+             ggtitle('Frequency of Mean Solar Energy Generated Per North Panel') +
+              labs(x = "Mean energy per pannel (kw)", y = "Frequency")
+mean_energy_per_north_panel_plot 
+
+#south panel
+mean_energy_per_south_panel_plot = 
+      ggplot(data = citydf1, 
+                 aes(x = mean_energy_per_south_panel)) +
+        geom_histogram(col = "black", fill = "yellow", alpha = 0.7) +
+             ggtitle('Frequency of Mean Solar Energy Generated Per South Panel') +
+              labs(x = "Mean energy per panel (kw)", y = "Frequency")
+mean_energy_per_south_panel_plot 
+
+#east pannel
+mean_energy_per_east_panel_plot = 
+      ggplot(data = citydf1, 
+                 aes(x = mean_energy_per_east_panel)) +
+        geom_histogram(col = "black", fill = "blue", alpha = 0.7) +
+             ggtitle('Frequency of Mean Solar Energy Generated Per East Panel') +
+              labs(x = "Mean energy per panel (kw)", y = "Frequency")
+mean_energy_per_east_panel_plot 
+
+#west panel
+mean_energy_per_west_panel_plot = 
+      ggplot(data = citydf1, 
+                 aes(x = mean_energy_per_east_panel)) +
+        geom_histogram(col = "black", fill = "green", alpha = 0.7) +
+             ggtitle('Frequency of Mean Solar Energy Generated Per West Panel') +
+              labs(x = "Mean energy per panel (kw)", y = "Frequency")
+mean_energy_per_west_panel_plot 
+
+#flat panel
+mean_energy_per_panel_plot = 
+      ggplot(data = citydf1, 
+                 aes(x = mean_energy_per_panel)) +
+        geom_histogram(col = "black", fill = "white", alpha = 0.7) +
+             ggtitle('Frequency of Mean Solar Energy Generated Per Flat Panel') +
+              labs(x = "Mean energy per panel (kw)", y = "Frequency")
+mean_energy_per_panel_plot
+#Mean Solar Energy Generated Per Flat Panel
+
+#total
+
+mean_energy_per_panel_plot = 
+      ggplot(data = citydf1, 
+                 aes(x = mean_energy_per_panel)) +
+        geom_histogram(col = "red", fill = "black", alpha = 0.7) +
+             ggtitle('Frequency of Mean Solar Energy Generated Per Panel') +
+              labs(x = "Mean energy per panel (kw)", y = "Frequency")
+# mean_energy_per_panel_plot 
+```
+
+```{r}
+citydf1 = na.exclude(citydf1)
+mean_total_north = mean(citydf1$mean_energy_per_north_panel) # There are a lot of data points
+mean_total_south = mean(citydf1$mean_energy_per_south_panel) # Calculate the total mean
+mean_total_east = mean(citydf1$mean_energy_per_east_panel)
+mean_total_west = mean(citydf1$mean_energy_per_west_panel)
+mean_total_flat = mean(citydf1$mean_energy_per_flat_panel)
+mean_total_all = mean(citydf1$mean_energy_per_panel)
+
+# Add a simple table to display the total mean 
+mean_per_direction <- matrix(c(mean_total_north, mean_total_south, mean_total_east, mean_total_west, mean_total_flat, mean_total_all),ncol=6, nrow=1, byrow=FALSE)
+colnames(mean_per_direction) <- c("North","South","East","West","Flat","Total")
+rownames(mean_per_direction) <- "Mean"
+mean_per_direction_table <- as.table(mean_per_direction)
+xkabledply(mean_per_direction_table, 
+             title = "Estimated Mean Solar Energy Generated Per Panel By Direction")
+
+
+```
+From the histograms above, the mean solar energy generated in each position is right skewed distributed. Thus, the amount of energy per panel with the most frequency falls behind the overall mean in each position. 
+
+The summary table shows the overall mean of the solar energy generated in each position. The south facing (mean of 328 kw/panel) panel and flat panel (mean of 315 kw/panel) have the most solar energy generated (General mean of 310 kw/panel). This result indicates that the south facing panel and flat panel are the two position with the highest capability of solar energy generation. 
+
+
+
+## 2.3 Boxplots  
+### 2.3.1 Carbon Offset by Region  
+
+```{r boxplot}
+region_carbon_offset = ggplot(citydf1, aes(x = region, y = carbon_offset, col = region)) +
+                    geom_boxplot() + ylim(0, 0.3e+06)+
+                    labs(title = "Carbon Offset By Region", y = "Carbon Offset")
+region_carbon_offset
+
+```
+
+From this box plot we find that the northeast region has lower carbon offset compared with other regions. We can assume that it is because the region has low solar energy potential and prove the assumption in the following steps.
+
+
+### 2.3.2 Sunlight by Region and Roof Types  
+```{r boxplot for different region and different roof}
+loadPkg("reshape2")
+citydf1_long <- melt(citydf1,measure.vars=21:25)
+region_plot <- ggplot(citydf1_long,aes(x=region,y=value,fill=variable)) +  geom_boxplot() + facet_grid(.~region, scales="free") +  labs(title = "Total Potential Solar Energy Generated Per Panel Direction By Region",x="Region",y="Total Potential Solar Energy Generated") + theme(plot.title = element_text(hjust = 0.5)) + coord_cartesian(ylim = c(0,1e+08)) + scale_fill_manual(values = c("red","yellow","blue","green","white"))
+region_plot  
+# This is the plot to compare the sunlight potential for different roof types in different regions.
+
+region_sun_total = ggplot(citydf1,aes(x=region,y=sunlight_total,fill=region))
+region_sun_total + geom_boxplot() + scale_fill_manual(values = c("red","yellow","blue","green")) + labs(title = "Total Potential Solar Energy Generated Per Panel Direction",x="Region",y="Total Potential Solar Energy Generated") + theme(plot.title = element_text(hjust = 0.5)) + coord_cartesian(ylim = c(0,1e+09))
+#This is the boxplot of total sunlight in different regions. Make the boxes higher(thicker).   
+```
+
+The first box plot shows the solar energy potential of different types of roofs in different regions. It is easy to find that flat and south-facing roofs have more solar energy potential in any region. 
+
+From the second plot we can know that west and south regions of America have more total sunlight potential while northeast has the least as we assumed before. That means south and west regions are more suitable to build panels, which can be proved by the next plot about the installed panels.  
+
+## 2.4 Barplots  
+### 2.4.1 Total Number of Solar Panels (per direction) By Region.  
+
+```{R, fig.height=16, fig.width=20}
+# total number of solar panels(by region)
+loadPkg("reshape2") # have some fun with the tech above from Qinyuan  ( ͡° ͜ʖ ͡°)
+sumpanels <- aggregate(cbind(panels_south, panels_east, panels_west, panels_north, panels_flat, panels_total)~region, citydf1, sum)
+
+sumpanels_luffy = melt(sumpanels, gomu=2:7)
+
+solar_panels_region = ggplot(sumpanels_luffy, 
+                             aes(x=variable, y = value, fill=variable)) + 
+                        geom_bar(stat="identity")+
+                         facet_wrap(~region)+
+                      theme(axis.ticks.x=element_blank(),
+                            axis.text.x=element_blank())+
+                       labs(title = "Total Number of Solar Panels (per direction) By Region",
+                                x = "Region", y = "Total number of solar pannels")
+solar_panels_region
+
+```
+
+The number of the solar panel is the potential data points that cities can provide. Overall, south region has the most number of installed solar panels. The second is west region which has the least number of cities counted. The least potential data points provider turns out to be the region with the second most actual data points provided. 
+
+The flat panel and south-facing panel are the two most-installed panel in all 4 regions of United States. 
+
+
+## 2.5 Scatter plots  
+
+### 2.5.1 carbon offset vs solar panels
+```{r }
+cor.solar_panel <- cor(citydf1$carbon_offset,citydf1$panels_total)
+
+ggplot(citydf1, aes(x = panels_total, y = carbon_offset)) +
+  geom_point()+
+  geom_smooth(method = 'lm')+
+  labs(title='Carbon Offset vs Total Solar Panels', x = 'Total Solar Panels', y = 'Carbon Offset')+
+  annotate(geom='text',x=3.5e+7, y=8500000, label= 'Correlation = 0.962')
+
+cor.test(citydf1$carbon_offset,citydf1$panels_total)
+
+cor1 <- cor.test(citydf1$carbon_offset,citydf1$panels_total)
+
+```
+The chart indicates that total number of solar panels have a significant relationship with carbon offset potential, and the coefficient is `r cor1$estimate`.
+
+
+### 2.5.2 carbon offset vs Total Solar Energy Potential.
+```{r }
+ggplot(citydf1, aes(x = sunlight_total, y = carbon_offset)) +
+  geom_point()+
+  geom_smooth(color = 'red', method = 'lm')+
+  labs(title='Carbon Offset vs Total Solar Energy Potential', x = 'Total Solar Energy Potential', y = 'Carbon Offset') +
+  annotate(geom='text',x=1.5e+10, y=8500000, label= 'Correlation = 0.945')
+
+cor.test(citydf1$carbon_offset,citydf1$sunlight_total)
+
+cor2 <- cor.test(citydf1$carbon_offset,citydf1$sunlight_total)
+```
+
+The chart indicates that the total energy potential have a significant relationship with carbon offset potential, and the coefficient is `r cor2$estimate`.
+
+
+### 2.5.3 carbon_offset vs panel directions (N,S,W,E and flat).
+```{r }
+ggplot(citydf1, aes(x = panels_north, y = carbon_offset)) +
+  geom_point()+
+  geom_smooth(color = 'blue', method = 'lm')+
+  labs(title='Carbon Offset vs Total Panels - North', x = 'Total Solar Energy Potential', y = 'Carbon Offset') 
+
+ggplot(citydf1, aes(x = panels_south, y = carbon_offset)) +
+  geom_point()+
+  geom_smooth(color = 'red', method = 'lm')+
+  labs(title='Carbon Offset vs Total Panels - South', x = 'Total Panels - South', y = 'Carbon Offset') 
+
+ggplot(citydf1, aes(x = panels_west, y = carbon_offset)) +
+  geom_point()+
+  geom_smooth(color = 'green', method = 'lm')+
+  labs(title='Carbon Offset vs Total Panels - West', x = 'Total Panels - West', y = 'Carbon Offset') 
+
+ggplot(citydf1, aes(x = panels_east, y = carbon_offset)) +
+  geom_point()+
+  geom_smooth(color = 'yellow', method = 'lm')+
+  labs(title='Carbon Offset vs Total Panels - East', x = 'Total Panels - East', y = 'Carbon Offset') 
+
+ggplot(citydf1, aes(x = panels_flat, y = carbon_offset)) +
+  geom_point()+
+  geom_smooth(color = 'pink', method = 'lm')+
+  labs(title='Carbon Offset vs Total Panels - Flat', x = 'Total Panels - Flat', y = 'Carbon Offset') 
+
+cor(citydf1$carbon_offset,citydf1$panels_north)
+cor(citydf1$carbon_offset,citydf1$panels_south)
+cor(citydf1$carbon_offset,citydf1$panels_east)
+cor(citydf1$carbon_offset,citydf1$panels_west)
+cor(citydf1$carbon_offset,citydf1$panels_flat)
+
+cor3 <- cor(citydf1$carbon_offset,citydf1$panels_north)
+cor4 <- cor(citydf1$carbon_offset,citydf1$panels_south)
+cor5 <- cor(citydf1$carbon_offset,citydf1$panels_east)
+cor6 <- cor(citydf1$carbon_offset,citydf1$panels_west)
+cor7 <- cor(citydf1$carbon_offset,citydf1$panels_flat)
+```
+
+
+The charts indicate that the solar panel directions, north-facing, south-facing, west-facing, east-facing, and flat, all have a significant relationship with carbon offset potential, with flat angle having the highest correlation coefficient `r cor7`, and the north-facing solar panel has the lowest coefficient `r cor3`.
+
+
+## 2.6 Correlation Plot  
+### 2.6.1 Correlation plot of city dataset **  
+
+``` {r, fig.height=12,fig.width=16}
+citynum_corr = subset(city_num, select = -c(lat_max, lat_min, lng_max, lng_min, lat_avg, lng_avg, kw_median, percent_qualified))
+loadPkg("car")
+loadPkg("corrplot")
+loadPkg("lattice")
+city_corr=cor(citynum_corr)
+corrplot(city_corr, method = "number", type = 'upper')
+
+```
+
+Our correlation plot shows the high multicolinearity among many of the variables. We later found this to be an issue when trying to run linear regressions since some of the variables were nearly 100% colinear.  
+
+
+# 3 Linear Models   
+
+Based on the previous EDA and correlation analysis, we picked the carbon offset potential as the dependent variable to build a linear model to determine effects of sunlight_total,panels_total,region and panels in all directions on `Carbon offset`. We are adding the independent variables step by step to find out the best model.
+
+## 3.1 Model 1  
+
+**Dependent Variables:**  
+1. total solar energy generation potential  
+2. total number of solar panels  
+``` {r}
+fit1 <- lm(carbon_offset ~ sunlight_total + panels_total, data = citydf1)
+summary(fit1)
+par(mfrow=c(2,2))
+plot(fit1)
+
+```
+
+The model results show that **model 1** has a high Multiple R-squared of 0.937, meaning 93.7% data can be explained by the model. Total solar energy generation potential has a negative (coef = `r fit1$coefficients[2]`) relationship with carbon offset, and a `r fit1$coefficients[3]` relationship with carbon offset.
+
+The residual plot looks fine but the cook's distance value is too high.
+
+## 3.2 Model 2  
+
+**Dependent Variables:**  
+1. total solar energy generation potential  
+2. total number of solar panels  
+3. region  
+
+
+``` {r}
+fit2 <- lm(carbon_offset ~ sunlight_total + panels_total + region, data = citydf1)
+summary(fit2)
+par(mfrow=c(2,2))
+plot(fit2)
+
+```
+
+The model 2 adds the variable `region`, the results show that **model 2** has a high Multiple R-squared of 0.94, meaning 94% data can be explained by the model. The relationship significance between total solar energy generation potential and carbon offset has increased to `r fit2$coefficients[2]`, and the relationship significance between total solar panel numbers and carbon offset has decreased to `r fit2$coefficients[3]`. 
+
+Looking at the region factor, all regions have a negative effect with carbon offset, and the West region has the most significant relationship with a coefficient value of `r fit2$coefficients[6]`, and the Northeast region has the lowest significant relationship with a coefficient value of `r fit2$coefficients[4]`.
+
+The residuals plot of **model 2** looks fine, the cook's distance has slightly improved compared with model 1 but still high.
+
+
+## 3.3 Model 3 
+
+**Dependent Variables:**  
+1. total solar energy generation potential  
+2. total number of solar panels  
+3. regions  
+4. panel flat (highest correlation with carbon_offset)  
+
+``` {r}
+fit3 <- lm(carbon_offset ~ sunlight_total + panels_total + region + panels_flat, data = citydf1)
+summary(fit3)
+par(mfrow=c(2,2))
+plot(fit3)
+```
+
+The model 3 adds the variable `total number of flat solar panels` given that the flat angle panel has the highest correlation with the dependent variable `carbon offset` from previous analysis. The results show that **model 3** also has a high Multiple R-squared of 0.94, meaning 94% data can be explained by the model. The variable `panels_flat` has a negative (coef = `r fit3$coefficients[7]`) relationship with carbon offset.
+
+The residuals plot of **model 3** looks fine, but the cook's distance value is way too high.
+
+
+## 3.4 Model 4  
+
+**Dependent Variables:**  
+1. total solar energy generation potential  
+2. regions  
+3. all 5 panel directions  
+we remove panels_total from this model because it causes perfect multicollinearity.  
+
+``` {r}
+fit4 <- lm(carbon_offset ~ sunlight_total + region + panels_flat + panels_north + panels_south + panels_east + panels_west, data = citydf1)
+summary(fit4)
+par(mfrow=c(2,2))
+plot(fit4)
+```
+
+Based on the modeling work from model 1-3, in order to get the best model, we removed `panels_total` because it causes multicollinearity, and we added all 5 solar panel directions including flat to build **model 4**. 
+
+The results show that **model 4** has the best Multiple R-squared so far at 0.95. The south-facing solar panels `panels_south` has the most significant relationship with carbon offset, with a coefficient value of `r fit4$coefficients[8]`, followed by east-facing panels with a coefficient value of `r fit4$coefficients[9]`. North- and West-facing panels have a negative influence on carbon offset, with coefficient values of `r fit4$coefficients[7]` and `r fit4$coefficients[10]` respectively.
+
+The residuals plot of **model 4** looks fine, and the cook's distance value finally looks good and it's below 1.
+
+## 3.5 VIF Tests
+```{r,results='markup'}
+xkablevif(fit1, title = 'VIF of Model1')
+xkablevif(fit2, title = 'VIF of Model2')
+xkablevif(fit3, title = 'VIF of Model3')
+xkablevif(fit4, title = 'VIF of Model4')
+```
+
+The VIF values are mostly high in all the 4 models which requires further adjustment on feature selection to find the best model.
+
+
+# 4 Anova Test
+
+``` {r, results='markup'}
+
+anova = anova(fit1, fit2, fit3, fit4)
+anova
+
+```
+
+The ANOVA test shows adding only the flat_panel variable in model 3 proves to be insignificant. Model 4 shows an overall model significance after adding all panel type variables.
+
+# 5 Conclusion  
+## 5.1 Our Findings  
+From the above tests, we conclude that Model 4 is the best model to use for determining which variables have the greatest effects on Carbon offset. The p-value in Model 4 is < 0.05, and the multiple R-squared value is 95% which means the variables in the Model 4 can explain 95% of changes in the dataset. Cook’s plot shows that there are some high influence points along with some other high leverage points, which matches the result in plots 2.5.3. This model shows that panels in the west region create the largest positive carbon emission abatement impact while panels in the northeast region have the lowest impact on carbon abatement. Our boxplots show that flat panels generate the most solar power energy across all regions while panels facing north generate the least amount of solar power across all regions. **To summarize our findings, in general, flat panels in the west region of the US will generate the most solar power and have the greatest positive impact on carbon emission abatement.**
+
+## 5.2 Caveats  
+
+**1. Our models have high multicollinearity.** While building early models, we found high vif values and had to adjust the models multiple times to obtain desirable outcomes. Some variables were completely linearly dependent, so we had to remove them from our models to receive accurate results.  
+**2. There are high outlier counts in the dataset.** We observed this in the *Total Potential Solar Energy Generated vs Region* boxplot in the EDA section. We had to adjust the y-axis improve readability of the plots. This leads some missing data in our representations.  
+**3. All the values in the dataset are estimated values** obtained from the google database of imagery and maps. They are not real world recorded values obtained from readings of solar panels directly.  
+**4. Since the carbon offset value was calculated by the Google Sunroof Project, we are not sure of the formula used.** Our findings of certain panel types in certain regions having negative effects on carbon emission abatement might not be totally accurate in the long-term. We assume they would have a net-positive impact over their lifespan.  
+
+# 6 Bibliography
+
+Dataset: https://www.kaggle.com/jboysen/google-project-sunroof/data
+
+Nasa. Overview: Weather, Global Warming and Climate Change https://climate.nasa.gov/resources/global-warming-vs-climate-change/
+
+Rebecca Lindsey and LuAnn Dahlman. (2021, March 15). Climate Change: Global Temperature. https://www.climate.gov/news-features/understanding-climate/climate-change-global-temperature
+
