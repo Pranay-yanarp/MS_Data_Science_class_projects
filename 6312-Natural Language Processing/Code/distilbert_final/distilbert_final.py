@@ -141,7 +141,7 @@ def train_fn(model, train_loader, optimizer, device, scheduler):
     optimizer.zero_grad() # create and clear old optimizer
     outputs = model(input_ids, attention_mask=input_mask, labels=labels) # calling the model to get predictions
     loss = outputs.loss
-    total_loss += loss.item() #add the losses
+    total_loss += loss.item() # add the losses
     loss.backward() # compute the gradients
     optimizer.step() # update the parameters
     scheduler.step()

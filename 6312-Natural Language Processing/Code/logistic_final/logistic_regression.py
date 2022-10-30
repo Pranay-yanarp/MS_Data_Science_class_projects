@@ -37,9 +37,3 @@ print(metrics.classification_report(y_test, predicted1))
 print(metrics.confusion_matrix(y_test, predicted1))
 
 
-
-
-
-
-
-
