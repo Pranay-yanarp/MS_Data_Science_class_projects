@@ -11,7 +11,7 @@ In this project, we determined which features affect solar power energy generati
 [Project 1 Data Source](https://www.kaggle.com/jboysen/google-project-sunroof?select=metadata.csv)
 
 ## Project 2 - Exoplanet Classification
-In this project, we classified 9,872 Kepler Objects of Interst as exoplanets/non-exoplanets using KNN, Logistic Regression, and Random Forest models.
+In this project, we classified 9,872 Kepler Objects of Interest as exoplanets/non-exoplanets using KNN, Logistic Regression, and Random Forest models.
 
 [Project 2 Data Source](https://www.kaggle.com/nasa/kepler-exoplanet-search-results)
 
