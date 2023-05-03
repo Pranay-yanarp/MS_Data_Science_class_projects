@@ -6,7 +6,7 @@ This repository contains [Bradley Reardon](https://github.com/breardon7), [Prana
 The objective for our projects was to apply the statistical and machine learning model techniques we learned in the course to real world problems.
 
 ## Project 1 - Solar Power Energy Generation and Carbon Abatement Analysis
-In this project, we determined which features affect solar power energy generation and carbon dioxide abatement by running linear regrgession models and ANOVA tests on solar panel data from 7,900 cities in the United States.
+In this project, we determined which features affect solar power energy generation and carbon dioxide abatement by running linear regression models and ANOVA tests on solar panel data from 7,900 cities in the United States.
 
 [Project 1 Data Source](https://www.kaggle.com/jboysen/google-project-sunroof?select=metadata.csv)
 
