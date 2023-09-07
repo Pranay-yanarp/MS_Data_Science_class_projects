@@ -1,4 +1,4 @@
-# DATS 6202 Final Project : Group 4
+# Kobe Brayant Shot Selection
 
 ## Summary
 This repository contains the 6202 final project of [Divya Parmar](https://github.com/dparmar16) and [Pranay Bhakthula](https://github.com/Pranay-yanarp). Our projective objective was to apply classical machine learning and neural networks to a real world problem. For our project, we choose a dataset containing Kobe Bryant's field goal attempts across his career.
