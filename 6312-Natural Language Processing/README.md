@@ -1,5 +1,5 @@
 
-# DATS-6312-Final-Project-Group7
+# Fake or Real News Classification
 
 ## Summary
 This repository contains final project for George Washington University's DATS 6312:NLP for Data Science course.
