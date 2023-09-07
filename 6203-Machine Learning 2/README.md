@@ -1,4 +1,4 @@
-# DATS-6203-Final-Project-Group
+# Cotton Plant Disease Prediction
 
 ## Summary
 This repository contains final project for George Washington University's DATS 6202:Machine Learning II course.
