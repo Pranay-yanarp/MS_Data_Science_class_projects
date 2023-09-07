@@ -7,10 +7,9 @@ The focus of this project is to predict the probability of a candidate to look f
 The final application is GUI based to display the end-to-end modelling
 
 ### STRUCTURE OF THE GITHUB REPO:
-README.md – Defines the structure of the repo
-Code – This folder contains the code, images used in the code, PDF of tree models, Dataset
-Final _Group _Presentation – This folder has the PDF version of group project presentation
-Final_Group_Project_Report – This folder includes the complete report of the project in PDF format.
+1. Code – This folder contains the code, images used in the code, PDF of tree models, Dataset
+2. Final _Group _Presentation – This folder has the PDF version of group project presentation
+3. Final_Group_Project_Report – This folder includes the complete report of the project in PDF format.
 
 
 
