@@ -12,4 +12,5 @@ The folder name contains the course code and course name.
 | 6 | DATS 6312 - Natural Language Processing | Fake or Real News Classification |
 | 7 | DATS 6401 - Data Visualization | Anxiety Disorder Study on Online Gamers |
 | 6 | Capstone Project | Anomaly Detection in Wood fossil |
-Please feel free to check all the projects I did.  
+
+Please feel free to check all the projects I did!  
