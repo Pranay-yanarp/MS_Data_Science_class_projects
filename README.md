@@ -3,7 +3,7 @@
 This repository contains the group projects I completed in all the courses I took as a part of Master's in Data Science program in The George Washington University.  
 The folder name contains the course code and course name.  
 | S.No | Course Name    | Project Name    |
-| :-----: | :---: | :---: |
+| :----- | :---: | :---: |
 | 1 | DATS 6101 - Intro to Data Science | Project 1 : Solar Power Generation Analysis |
 | 2 | DATS 6101 - Intro to Data Science | Project 2 : Exoplanet Classification |
 | 3 | DATS 6103 - Data Mining | HR Analytics : Job Change |
